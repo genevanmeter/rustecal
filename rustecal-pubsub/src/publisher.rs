@@ -1,8 +1,17 @@
 use rustecal_sys::*;
 use rustecal_core::types::DataTypeInfo;
 use crate::types::TopicId;
+use crate::payload_writer::{PayloadWriter, CURRENT_WRITER, write_full_cb, write_mod_cb, get_size_cb};
 use std::ffi::{CStr, CString};
 use std::ptr;
+
+/// When to assign a timestamp to an outgoing message.
+pub enum Timestamp {
+    /// Let eCAL assign its internal send timestamp.
+    Auto,
+    /// Use this custom timestamp (microseconds since epoch).
+    Custom(i64),
+}
 
 /// A safe and ergonomic wrapper around the eCAL C publisher API.
 ///
@@ -66,43 +75,81 @@ impl Publisher {
     /// # Arguments
     ///
     /// * `data` - A byte buffer containing the serialized message payload.
+    /// * `timestamp` - When to timestamp the message.
     ///
     /// # Returns
     ///
-    /// `1` on success, `0` on failure.
-    pub fn send(&self, data: &[u8]) -> i32 {
-        unsafe {
+    /// `true` on success, `false` on failure.
+    pub fn send(&self, data: &[u8], timestamp: Timestamp) -> bool {
+        let ts_ptr = match timestamp {
+            Timestamp::Auto      => ptr::null(),
+            Timestamp::Custom(t) => &t as *const i64 as *const _,
+        };
+        let ret = unsafe {
             eCAL_Publisher_Send(
                 self.handle,
                 data.as_ptr() as *const _,
                 data.len(),
-                ptr::null(),
+                ts_ptr,
             )
-        }
+        };
+        // eCAL returns 0 on success
+        ret == 0
     }
 
-    /// Sends a serialized message with a custom timestamp.
+    /// Sends a zero-copy payload using a [`PayloadWriter`].
     ///
     /// # Arguments
     ///
-    /// * `data` - A byte buffer containing the message.
-    /// * `timestamp` - Timestamp in microseconds (use `-1` to let eCAL determine the time).
+    /// * `writer` - A mutable reference to a `PayloadWriter` implementation.
+    /// * `timestamp` - When to timestamp the message.
     ///
     /// # Returns
     ///
-    /// `1` on success, `0` on failure.
-    pub fn send_with_timestamp(&self, data: &[u8], timestamp: i64) -> i32 {
-        unsafe {
-            eCAL_Publisher_Send(
-                self.handle,
-                data.as_ptr() as *const _,
-                data.len(),
-                &timestamp as *const _ as *const _,
-            )
-        }
-    }
+    /// `true` on success, `false` on failure.
+    pub fn send_payload_writer<W: PayloadWriter>(
+        &self,
+        writer: &mut W,
+        timestamp: Timestamp,
+    ) -> bool {
+        // stash the writer pointer in TLS
+        let ptr = writer as *mut W as *mut dyn PayloadWriter;
+        CURRENT_WRITER.with(|cell| {
+            *cell.borrow_mut() = Some(ptr);
+        });
 
-    /// Returns the number of currently connected subscribers.
+        // build the C payload writer struct
+        let c_writer = eCAL_PayloadWriter {
+            WriteFull:     Some(write_full_cb),
+            WriteModified: Some(write_mod_cb),
+            GetSize:       Some(get_size_cb),
+        };
+
+        // prepare timestamp pointer
+        let ts_ptr = match timestamp {
+            Timestamp::Auto      => ptr::null(),
+            Timestamp::Custom(t) => &t as *const i64 as *const _,
+        };
+
+        // call into the FFI
+        let result = unsafe {
+            eCAL_Publisher_SendPayloadWriter(
+                self.handle,
+                &c_writer as *const _,
+                ts_ptr,
+            )
+        };
+
+        // clear the slot
+        CURRENT_WRITER.with(|cell| {
+            cell.borrow_mut().take();
+        });
+
+        // eCAL returns 0 on success
+        result == 0
+    }
+    
+    /// Retrieves the number of currently connected subscribers.
     pub fn get_subscriber_count(&self) -> usize {
         unsafe { eCAL_Publisher_GetSubscriberCount(self.handle) }
     }
