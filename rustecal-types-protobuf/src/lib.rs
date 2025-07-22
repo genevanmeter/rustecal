@@ -2,11 +2,11 @@
 //!
 //! Provides support for Protobuf message serialization with rustecal.
 
-use std::sync::Arc;
 use prost::Message;
 use rustecal_core::types::DataTypeInfo;
 use rustecal_pubsub::typed_publisher::PublisherMessage;
 use rustecal_pubsub::typed_subscriber::SubscriberMessage;
+use std::sync::Arc;
 
 /// Marker trait to opt-in a Protobuf type for use with eCAL.
 ///
@@ -48,7 +48,7 @@ where
     /// - `Some(ProtobufMessage<T>)` on success
     /// - `None` if decoding fails
     fn from_bytes(bytes: &[u8], _data_type_info: &DataTypeInfo) -> Option<Self> {
-        T::decode(bytes.as_ref()).ok().map(|msg| ProtobufMessage {
+        T::decode(bytes).ok().map(|msg| ProtobufMessage {
             data: Arc::new(msg),
         })
     }
