@@ -32,13 +32,22 @@ fn main() {
         println!("cargo:warning=Building on Windows");
         println!("cargo:warning=Using ECAL_HOME = {ecal_home}");
     } else if cfg!(target_os = "linux") {
-        // --- Linux: Assume system-wide install ---
-        println!("cargo:rustc-link-lib=dylib=ecal_core_c");
-        println!("cargo:rustc-link-search=native=/usr/local/lib"); // Or /usr/lib if needed
+        match env::var("ECAL_HOME") {
+            Ok(ecal_home) => {
+                println!("cargo:warning=Using ECAL_HOME = {ecal_home}");
+                let include_path = format!("{ecal_home}/include");
+                let lib_path = format!("{ecal_home}/lib");
 
-        builder = builder
-            .clang_arg("-I/usr/include")
-            .clang_arg("-I/usr/local/include");
+                println!("cargo:rustc-link-search=native={lib_path}");
+
+                builder = builder.clang_arg(format!("-I{include_path}"));
+            }
+            _ => {
+                println!("cargo:warning=Using system-wide eCAL install");
+            }
+        };
+
+        println!("cargo:rustc-link-lib=dylib=ecal_core_c");
 
         // Debug info
         println!("cargo:warning=Building on Linux");
