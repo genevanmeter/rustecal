@@ -96,8 +96,6 @@ impl ServiceClient {
                 result.push(ClientInstance::from_raw(instance_ptr));
                 offset += 1;
             }
-
-            eCAL_ClientInstances_Delete(list_ptr);
         }
 
         result
@@ -107,6 +105,9 @@ impl ServiceClient {
 impl Drop for ServiceClient {
     fn drop(&mut self) {
         unsafe {
+            let client_instances_ = eCAL_ServiceClient_GetClientInstances(self.handle);
+            eCAL_ClientInstances_Delete(client_instances_);
+
             eCAL_ServiceClient_Delete(self.handle);
         }
     }

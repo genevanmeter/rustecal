@@ -78,7 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         iterations += 1;
 
         // every ~2000 msgs, log if 1s has passed
-        if iterations % 2000 == 0 && last_log.elapsed() >= Duration::from_secs(1) {
+        if iterations.is_multiple_of(2000) && last_log.elapsed() >= Duration::from_secs(1) {
             let secs = last_log.elapsed().as_secs_f64();
             let kbyte_s = (bytes_sent as f64 / 1024.0) / secs;
             let mbyte_s = kbyte_s / 1024.0;
